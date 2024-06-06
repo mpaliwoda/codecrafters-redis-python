@@ -1,5 +1,7 @@
 import asyncio
 from typing import TypeAlias
+from app.proto import resp2
+from app import commands
 
 Address: TypeAlias = str
 Port: TypeAlias = int
@@ -34,7 +36,10 @@ async def listen_task(reader: asyncio.StreamReader, writer: asyncio.StreamWriter
         if data == b"":
             break
 
-        writer.write("+PONG\r\n".encode())
+        _, parsed = resp2.parse_message(data)
+        response = commands.exec(parsed)
+
+        writer.write(response)
         await writer.drain()
 
 
