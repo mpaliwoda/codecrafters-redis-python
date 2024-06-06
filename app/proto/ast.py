@@ -5,10 +5,9 @@ from typing import Literal, TypeAlias
 @dataclass
 class String:
     val: str
-    tok: Literal["+"] = "+"
 
     def encode(self) -> bytes:
-        return f"{self.tok}{self.val}\r\n".encode()
+        return f"${len(self.val)}\r\n{self.val}\r\n".encode()
 
 @dataclass
 class Integer:
@@ -28,20 +27,10 @@ class Err:
 
 @dataclass
 class Null:
-    tok: Literal["$"] | Literal["*"]
     val: Literal[-1] = -1
 
     def encode(self) -> bytes:
-        return f"{self.tok}{self.val}\r\n".encode()
-
-@dataclass
-class Bulk:
-    val: str
-    size: int
-    tok: Literal["$"] = "$"
-
-    def encode(self) -> bytes:
-        return f"{self.tok}{self.size}\r\n{self.val}\r\n".encode()
+        return f"${self.val}\r\n".encode()
 
 @dataclass
 class Arr:
@@ -57,7 +46,6 @@ class Arr:
 
 Ast: TypeAlias = (
      Arr
-    | Bulk
     | Err
     | Integer
     | Null
