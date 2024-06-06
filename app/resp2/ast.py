@@ -35,11 +35,10 @@ class Null:
 @dataclass
 class Arr:
     elements: list[Ast]
-    size: int
     tok: Literal["*"] = "*"
 
     def encode(self) -> bytes:
-        s = f"{self.tok}{self.size}\r\n".encode()
+        s = f"{self.tok}{len(self.elements)}\r\n".encode()
         el = b"\r\n".join(map(lambda elem: elem.encode(), self.elements))
         return s + el
 

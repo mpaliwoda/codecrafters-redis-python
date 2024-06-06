@@ -1,7 +1,7 @@
 import asyncio
+import datetime
 from typing import TypeAlias
-from app.proto import resp2
-from app import commands
+from app.resp2 import KVStore, parser, evaluator
 
 Address: TypeAlias = str
 Port: TypeAlias = int
@@ -10,7 +10,7 @@ ClientId: TypeAlias = str
 ClientTask: TypeAlias = asyncio.Task
 
 _clients: dict[ClientId, ClientTask] = {}
-
+_kv_store: KVStore = {}
 
 async def on_client_connect(reader: asyncio.StreamReader, writer: asyncio.StreamWriter):
     client_id = writer.get_extra_info('peername')
@@ -36,11 +36,23 @@ async def listen_task(reader: asyncio.StreamReader, writer: asyncio.StreamWriter
         if data == b"":
             break
 
-        _, parsed = resp2.parse_message(data)
-        response = commands.exec(parsed)
+        _, parsed = parser.parse_message(data)
+        response = evaluator.exec(parsed, _kv_store)
 
         writer.write(response)
         await writer.drain()
+
+
+async def expiry_task() -> None:
+    now = datetime.datetime.now().timestamp() * 1000
+
+    while True:
+        for key, (_, expiry) in _kv_store.items():
+            if expiry is None:
+                continue
+            if now >= expiry:
+                del _kv_store[key]
+        await asyncio.sleep(0.1)
 
 
 async def main():
@@ -52,6 +64,7 @@ async def main():
         start_serving=False,
     )
 
+    asyncio.create_task(expiry_task())
     await server_socket.serve_forever()
 
     server_socket.close()

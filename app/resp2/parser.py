@@ -1,5 +1,6 @@
+# technically I think this is parser and lexer in one?
 from enum import Enum
-from app.proto.ast import Ast, Arr, Err, Integer, Null, String
+from app.resp2.ast import Ast, Arr, Err, Integer, Null, String
 
 
 class Token(Enum):
