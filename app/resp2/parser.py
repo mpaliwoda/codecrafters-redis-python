@@ -1,105 +1,90 @@
-# technically I think this is parser and lexer in one?
-from enum import Enum
-from app.resp2.ast import Ast, Arr, Err, Integer, Null, String
+from app.resp2 import obj
 
 
-class Token(Enum):
+class Token:
     ARRAY = ord("*")
     BULK = ord("$")
     ERROR = ord("-")
     INTEGER = ord(":")
     STRING = ord("+")
+    CARRIAGE_RET = ord("\r")
 
 
-CARRIAGE_RET = ord("\r")
-NEWLINE = ord("\n")
+class Parser:
+    """Not exactly what you'd call a high performance parser"""
 
+    def __init__(self, message: bytes) -> None:
+        if message == b"":
+            raise ValueError("Cannot parse empty message")
 
-def parse_message(msg: bytes, ix: int = 0) -> tuple[int, Ast]:
-    char = msg[ix]
+        self._message = message
+        self._position = 0
 
-    match Token(char):
-        case Token.STRING:
-            return read_string(msg, ix)
-        case Token.INTEGER:
-            return read_int(msg, ix)
-        case Token.ERROR:
-            return read_err(msg, ix)
-        case Token.BULK:
-            return read_bulk(msg, ix)
-        case Token.ARRAY:
-            return read_arr(msg, ix)
+    def parse_statement(self) -> obj.Obj:
+        match self.current_char:
+            case Token.BULK:
+                return self.read_bulk()
+            case Token.STRING:
+                return self.read_string()
+            case Token.ERROR:
+                return self.read_err()
+            case Token.INTEGER:
+                return self.read_int()
+            case Token.ARRAY:
+                return self.read_arr()
+            case _:
+                raise RuntimeError("Failed to parse message")
 
+    @property
+    def current_char(self) -> int:
+        return self._message[self._position]
 
-def read_string(msg: bytes, ix: int) -> tuple[int, String]:
-    ix += 1
-    val_end = _read_val_until_separator(msg, ix)
-    ast_elem = String(val=msg[ix:val_end].decode())
-    ix = _consume_separator(msg, val_end)
-    return ix, ast_elem
+    def advance_position(self, offset: int = 1) -> None:
+        self._position += offset
 
+    def read_bulk(self) -> obj.String:
+        self.advance_position()
+        start = self._position
+        while self.current_char != Token.CARRIAGE_RET:
+            self.advance_position()
+        size = int(self._message[start : self._position].decode())
+        self.advance_position(offset=2)
+        raw_val = self._message[self._position : self._position + size]
+        self.advance_position(offset=size + 2)
+        return obj.String(raw_val.decode())
 
-def read_int(msg: bytes, ix: int) -> tuple[int, Integer]:
-    ix += 1
-    val_end = _read_val_until_separator(msg, ix)
-    ast_elem = Integer(val=int(msg[ix:val_end].decode()))
-    ix = _consume_separator(msg, val_end)
-    return ix, ast_elem
+    def read_string(self) -> obj.String:
+        self.advance_position()
+        start = self._position
+        while self.current_char != Token.CARRIAGE_RET:
+            self.advance_position()
+        raw_val = self._message[start : self._position]
+        self.advance_position(offset=2)
+        return obj.String(raw_val.decode())
 
+    def read_int(self) -> obj.Integer:
+        self.advance_position()
+        start = self._position
+        while self.current_char != Token.CARRIAGE_RET:
+            self.advance_position()
+        raw_val = self._message[start : self._position]
+        self.advance_position(offset=2)
+        return obj.Integer(int(raw_val.decode()))
 
-def read_err(msg: bytes, ix: int) -> tuple[int, Err]:
-    ix += 1
-    val_end = _read_val_until_separator(msg, ix)
-    ast_elem = Err(val=msg[ix:val_end].decode())
-    ix = _consume_separator(msg, val_end)
-    return ix, ast_elem
+    def read_err(self) -> obj.Err:
+        self.advance_position()
+        start = self._position
+        while self.current_char != Token.CARRIAGE_RET:
+            self.advance_position()
+        raw_val = self._message[start : self._position]
+        self.advance_position(offset=2)
+        return obj.Err(raw_val.decode())
 
-
-def read_bulk(msg: bytes, ix: int) -> tuple[int, String | Null]:
-    ix += 1
-    # get bulk string size
-    val_end =_read_val_until_separator(msg, ix)
-    size = int(msg[ix:val_end].decode())
-    ix = _consume_separator(msg, val_end)
-
-    if size == -1:
-        return ix, Null()
-    else:
-        val_end = _read_val_until_separator(msg, ix)
-        assert val_end - ix == size
-        ast_elem = String(val=msg[ix:val_end].decode())
-        ix = _consume_separator(msg, val_end)
-        return ix, ast_elem
-
-
-def read_arr(msg, ix) -> tuple[int, Arr | Null]:
-    ix += 1
-    # get array string size
-    val_end = _read_val_until_separator(msg, ix)
-    size = int(msg[ix:val_end].decode())
-    ix = _consume_separator(msg, val_end)
-
-    if size == -1:
-        return ix, Null()
-
-    elements: list[Ast] = []
-
-    for _ in range(size):
-        ix, ast_elem = parse_message(msg, ix)
-        elements.append(ast_elem)
-
-    return ix, Arr(elements, size)
-
-
-def _read_val_until_separator(msg: bytes, ix: int) -> int:
-    current = ix
-    while msg[current] != CARRIAGE_RET:
-        current += 1
-
-    return current
-
-
-def _consume_separator(msg: bytes, ix: int) -> int:
-    assert msg[ix] == CARRIAGE_RET
-    assert msg[ix + 1] == NEWLINE
-    return ix + 2
+    def read_arr(self) -> obj.Arr:
+        self.advance_position()
+        start = self._position
+        while self.current_char != Token.CARRIAGE_RET:
+            self.advance_position()
+        size = int(self._message[start : self._position].decode())
+        self.advance_position(offset=2)
+        return obj.Arr(elements=[self.parse_statement() for _ in range(size)])

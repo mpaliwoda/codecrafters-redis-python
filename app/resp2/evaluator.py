@@ -1,177 +1,111 @@
 import datetime
-from dataclasses import dataclass
-from typing import Literal, TypeAlias, cast
-from app.resp2 import KVStore, ast
-
-def exec(command_ast: ast.Ast, kv_store: KVStore) -> bytes:
-    match command_ast:
-        case ast.Arr(elements=[command, *args]) if type(command) == ast.String:
-            return exec_command(command, kv_store, *args)
-        case _:
-            raise ValueError(f"Malfromed message: {command_ast}")
+from typing import Any, Literal, TypeGuard, TypeVar, Type, Optional, assert_never
+from app.kv_store import KVStore, obj
+from collections.abc import Iterable
 
 
-def exec_command(command: ast.String, kv_store: KVStore, *args: ast.Ast) -> bytes:
-    match command.val.lower():
-        case "ping":
-            if len(args) > 0:
-                raise ValueError(f"Expected ping to have no args, got: {args}")
-            return ping()
-        case "echo":
-            if len(args) != 1:
-                raise ValueError(f"Expected ping to have exactly 1 arg, got: {args}")
-            return echo(args[0])
-        case "get":
-            if len(args) != 1:
-                raise ValueError(f"Expected get to have exactly 1 arg, got: {args}")
-            return get_handler(kv_store, args[0])
-        case "set":
-            return set_handler(kv_store, *args)
-        case val:
-            print(f"got unsupported command: {val} {args}")
-            return nil()
+T = TypeVar("T")
 
 
-def ping() -> bytes:
-    return ast.String("PONG").encode()
+def ensure_iterable_type(v: Iterable[Any], typ: Type[T]) -> TypeGuard[Iterable[T]]:
+    return all(isinstance(elem, typ) for elem in v)
 
 
-def echo(echo: ast.Ast) -> bytes:
-    return echo.encode()
-
-def nil() -> bytes:
-    return ast.Null().encode()
-
-
-def get_handler(kv_store: KVStore, key: ast.Ast) -> bytes:
-    if type(key) not in (ast.String, ast.Integer):
-        return nil()
-
-    key = cast(ast.String | ast.Integer, key)
-    res = kv_store.get(key.val)
-
-    match res:
-        case None:
-            return nil()
-        case (val, expiry):
-            if expiry is not None and (datetime.datetime.now().timestamp() * 1000.) >= expiry:
-                return nil()
-
-            match val:
-                case str():
-                    return ast.String(val).encode()
-                case int():
-                    return ast.Integer(val).encode()
-
-    return nil()
-
-
-@dataclass
-class Px:
-    expiry_ms: float
-
-
-@dataclass
-class PxAt:
-    expiry_at_ms: float
-
-
-@dataclass
-class Ex:
-    expiry_s: float
-
-
-@dataclass
-class ExAt:
-    expiry_at_s: float
-
+Px = Literal["px"]
+PxAt = Literal["pxat"]
+Ex = Literal["ex"]
+ExAt = Literal["exat"]
 
 Nx = Literal["nx"]
 Xx = Literal["xx"]
 
+SetIf = Nx | Xx
+Expiry = tuple[Px | PxAt | Ex | ExAt, float]
 
-Flag: TypeAlias = Nx | Xx | Ex | ExAt | Px | PxAt
 
+class Evaluator:
+    def __init__(self, kv_store: KVStore) -> None:
+        self.kv_store = kv_store
 
-def set_handler(kv_store: KVStore, *args: ast.Ast) -> bytes:
-    key, val, *flags = args
+    def eval(self, command: obj.Obj) -> obj.Obj:
+        match command:
+            case obj.Arr(elements=elements):
+                # heck yeah narrow those types brother
+                if not ensure_iterable_type(elements, obj.String):
+                    raise RuntimeError(f"malformed command: {elements}")
+                func, *args = elements
+                return self.exec_command(func, *args)
+            case obj.String():
+                return self.exec_command(command)
+            case _:
+                raise RuntimeError("malformed command")
 
-    key = cast(ast.String | ast.Integer , key)
-    val = cast(ast.String | ast.Integer , val)
+    def exec_command(self, command: obj.String, *args: obj.String) -> obj.Obj:
+        match command.val.lower():
+            case "ping":
+                if len(args) > 0:
+                    raise ValueError(f"Expected ping to have no args, got: {args}")
+                return obj.String("PONG")
+            case "echo":
+                if len(args) != 1:
+                    raise ValueError(f"Expected ping to have exactly 1 arg, got: {args}")
+                return args[0]
+            case "get":
+                if len(args) != 1:
+                    raise ValueError(f"Expected get to have exactly 1 arg, got: {args}")
+                key = args[0]
+                return self.kv_store.get(key)
+            case "set":
+                key, val, *flags = args
+                return self.set_handler(key, val, *flags)
+            case val:
+                print(f"got unsupported command: {val} {args}")
+                return obj.Null()
 
-    parsed_flags = _parse_set_flags(*flags)
-    expiry: float | None = None
+    def set_handler(self, key: obj.String, val: obj.String, *flags: obj.String) -> obj.Obj:
+        set_if, expiry = self._parse_set_flags(*flags)
+        expires_at = self._calc_expiries_at(expiry)
+        return self.kv_store.set(key, val, expires_at, set_if)
 
-    for flag in parsed_flags:
-        match flag:
-            case "nx":
-                if kv_store.get(key.val):
-                    return nil()
-            case "xx":
-                match kv_store.get(key.val):
-                    case None:
-                        pass
-                    case (_, None):
-                        pass
-                    case (_, float(expiry)):
-                        if (datetime.datetime.now().timestamp() * 1000.) >= expiry:
-                            pass
-                        else:
-                            return nil()
-            case Px(exp):
-                expiry = (datetime.datetime.now().timestamp() * 1000.) + exp
-            case Ex(exp):
-                expiry = (datetime.datetime.now().timestamp() * 1000.) + (exp * 1000.)
-            case PxAt(exp):
-                expiry = exp
-            case ExAt(exp):
-                expiry = exp * 1000.
-    else:
-        key = cast(ast.String | ast.Integer, key)
-        val = cast(ast.String | ast.Integer, val)
+    @staticmethod
+    def _parse_set_flags(*flags: obj.String) -> tuple[Optional[SetIf], Optional[Expiry]]:
+        ix = 0
 
-        kv_store[key.val] = (val.val, expiry)
+        expiry: Optional[Expiry] = None
+        set_if: Optional[SetIf] = None
 
-        return ast.String("OK").encode()
+        while ix < len(flags):
+            flag = flags[ix]
 
-def _parse_set_flags(*flags: ast.Ast) -> list[Flag]:
-    ix = 0
-    parsed_flags: list[Flag] = []
+            match f := flag.val.lower():
+                case "px" | "pxat" | "ex" | "exat":
+                    if expiry:
+                        raise RuntimeError("malformed set command")
 
-    while ix < len(flags):
-        flag = flags[ix] 
-        assert type(flag) == ast.String
+                    expiry_val = flags[ix + 1]
+                    expiry = f, float(expiry_val.val)
+                    ix += 2
+                case "nx" | "xx":
+                    if set_if:
+                        raise RuntimeError("malformed set command")
 
-        match flag.val.lower():
-            case "px":
-                assert ix + 1 < len(flags)
-                expiry_ast = flags[ix + 1]
-                assert hasattr(expiry_ast, "val")
-                parsed_flags.append(Px(float(expiry_ast.val)))
-                ix += 2
-            case "pxat":
-                assert ix + 1 < len(flags)
-                expiry_ast = flags[ix + 1]
-                assert hasattr(expiry_ast, "val")
-                parsed_flags.append(PxAt(float(expiry_ast.val)))
-                ix += 2
-            case "ex":
-                assert ix + 1 < len(flags)
-                expiry_ast = flags[ix + 1]
-                assert hasattr(expiry_ast, "val")
-                parsed_flags.append(ExAt(float(expiry_ast.val)))
-                ix += 2
-            case "exat":
-                assert ix + 1 < len(flags)
-                expiry_ast = flags[ix + 1]
-                assert hasattr(expiry_ast, "val")
-                parsed_flags.append(ExAt(float(expiry_ast.val)))
-                ix += 2
-            case "nx":
-                parsed_flags.append("nx")
-                ix += 1
-            case "xx":
-                parsed_flags.append("xx")
-                ix += 1
+                    set_if = f
+                    ix += 1
 
-    return parsed_flags
+        return set_if, expiry
+
+    @staticmethod
+    def _calc_expiries_at(expiry: Optional[Expiry]) -> float | None:
+        match expiry:
+            case None:
+                return None
+            case ("px", exp):
+                return (datetime.datetime.now().timestamp() * 1000.0) + exp
+            case ("ex", exp):
+                return (datetime.datetime.now().timestamp() * 1000.0) + (exp * 1000.0)
+            case ("pxat", exp):
+                return exp
+            case ("exat", exp):
+                return exp * 1000.0
+
+        assert False, "unreachable"
