@@ -13,5 +13,5 @@ def encode_resp2(o: obj.Obj) -> bytes:
             return "$-1\r\n".encode()
         case obj.Arr(elements):
             s = f"*{len(elements)}\r\n".encode()
-            el = b"\r\n".join(map(lambda elem: elem.encode(), elements))
+            el = b"\r\n".join(map(lambda elem: encode_resp2(elem), elements))
             return s + el

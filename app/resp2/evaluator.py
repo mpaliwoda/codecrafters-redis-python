@@ -1,7 +1,9 @@
 import datetime
-from typing import Any, Literal, TypeGuard, TypeVar, Type, Optional, assert_never
+from typing import Any, Literal, TypeGuard, TypeVar, Type, Optional
 from app.kv_store import KVStore, obj
 from collections.abc import Iterable
+
+from app.server.info import ServerInfo
 
 
 T = TypeVar("T")
@@ -24,8 +26,9 @@ Expiry = tuple[Px | PxAt | Ex | ExAt, float]
 
 
 class Evaluator:
-    def __init__(self, kv_store: KVStore) -> None:
+    def __init__(self, kv_store: KVStore, server_info: ServerInfo) -> None:
         self.kv_store = kv_store
+        self._server_info = server_info
 
     def eval(self, command: obj.Obj) -> obj.Obj:
         match command:
@@ -58,9 +61,23 @@ class Evaluator:
             case "set":
                 key, val, *flags = args
                 return self.set_handler(key, val, *flags)
+            case "info":
+                return self.info_handler(*args)
             case val:
                 print(f"got unsupported command: {val} {args}")
                 return obj.Null()
+
+    def info_handler(self, *args) -> obj.Obj:
+        match args:
+            case [subcommand] if isinstance(subcommand, obj.String):
+                match subcommand.val.lower():
+                    case "replication":
+                        info = self._server_info.to_string()
+                        return obj.String(info)
+                    case _:
+                        raise RuntimeError("not supported yet")
+            case _:
+                raise RuntimeError("not supported yet")
 
     def set_handler(self, key: obj.String, val: obj.String, *flags: obj.String) -> obj.Obj:
         set_if, expiry = self._parse_set_flags(*flags)
@@ -68,7 +85,9 @@ class Evaluator:
         return self.kv_store.set(key, val, expires_at, set_if)
 
     @staticmethod
-    def _parse_set_flags(*flags: obj.String) -> tuple[Optional[SetIf], Optional[Expiry]]:
+    def _parse_set_flags(
+        *flags: obj.String,
+    ) -> tuple[Optional[SetIf], Optional[Expiry]]:
         ix = 0
 
         expiry: Optional[Expiry] = None
