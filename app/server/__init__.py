@@ -1,3 +1,5 @@
+import time
+import hashlib
 import asyncio
 from typing import Literal, Optional, TypeAlias
 from app.kv_store import KVStore
@@ -22,12 +24,14 @@ class Server:
         if not replicaof:
             role = "master"
             master_addr = addr
+            master_repl_id = self._gen_id()
         else:
             role = "slave"
             master_addr = replicaof
+            master_repl_id = ""
 
         self._clients: dict[ClientId, ClientTask] = {}
-        self._info = ServerInfo(role, addr,  master_addr)
+        self._info = ServerInfo(role, addr, master_addr, master_repl_id, master_repl_offset=0)
         self._evaluator = Evaluator(kv_store, self._info)
 
     async def on_client_connect(
@@ -80,3 +84,8 @@ class Server:
 
         server_socket.close()
         await server_socket.wait_closed()
+
+    @staticmethod
+    def _gen_id() -> str:
+        now = str(time.time()).encode()
+        return hashlib.sha256(now).hexdigest()[:40]
