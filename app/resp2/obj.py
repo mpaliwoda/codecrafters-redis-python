@@ -6,6 +6,7 @@ from typing import TypeAlias
 @dataclass(frozen=True)
 class String:
     val: str
+    simple: bool = False
 
 
 @dataclass(frozen=True)

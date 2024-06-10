@@ -4,7 +4,6 @@ from typing import TypeAlias, TYPE_CHECKING
 from app.server.info import Address
 from app.resp2.encoder import encode_resp2
 from app.resp2.parser import Parser
-
 if TYPE_CHECKING:
     from app.resp2.evaluator import Evaluator
 
@@ -12,7 +11,7 @@ ClientId: TypeAlias = str
 ClientTask: TypeAlias = asyncio.Task
 
 
-class Server:
+class ServerWrapper:
     def __init__(
         self,
         addr: Address,
@@ -47,28 +46,21 @@ class Server:
         reader: asyncio.StreamReader,
         writer: asyncio.StreamWriter,
     ):
+        parser = Parser(reader)
+
         while True:
-            data = await reader.read(1024)
-
-            if data == b"":
-                break
-
-            parsed_command = Parser(data).parse_statement()
+            parsed_command = await parser.parse_statement()
             response = self._evaluator.eval(parsed_command)
 
-            writer.write(encode_resp2(response))
-            await writer.drain()
+            if response:
+                writer.write(encode_resp2(response))
+                await writer.drain()
 
-    async def run(self):
-        server_socket = await asyncio.start_server(
+    async def prepare(self):
+        return await asyncio.start_server(
             self.on_client_connect,
             host=self._addr.host,
             port=self._addr.port,
             reuse_port=True,
             start_serving=False,
         )
-
-        await server_socket.serve_forever()
-
-        server_socket.close()
-        await server_socket.wait_closed()

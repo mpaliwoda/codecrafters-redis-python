@@ -48,7 +48,7 @@ class Evaluator:
             case "ping":
                 if len(args) > 0:
                     raise ValueError(f"Expected ping to have no args, got: {args}")
-                return obj.String("PONG")
+                return obj.String("PONG", simple=True)
             case "echo":
                 if len(args) != 1:
                     raise ValueError(f"Expected ping to have exactly 1 arg, got: {args}")
@@ -63,11 +63,13 @@ class Evaluator:
                 return self.set_handler(key, val, *flags)
             case "info":
                 return self.info_handler(*args)
+            case "replconf":
+                return self.replconf_handler(*args)
             case val:
                 print(f"got unsupported command: {val} {args}")
                 return obj.Null()
 
-    def info_handler(self, *args) -> obj.Obj:
+    def info_handler(self, *args: obj.String) -> obj.Obj:
         match args:
             case [subcommand] if isinstance(subcommand, obj.String):
                 match subcommand.val.lower():
@@ -77,7 +79,18 @@ class Evaluator:
                     case _:
                         raise RuntimeError("not supported yet")
             case _:
-                raise RuntimeError("not supported yet")
+                return obj.String(val="OK", simple=True)
+
+    def replconf_handler(self, *args: obj.String) -> obj.Obj:
+        arg, *rest = args
+
+        match arg.val.lower():
+            case "listening-port":
+                return obj.String(val="OK", simple=True)
+            case "capa":
+                return obj.String(val="OK", simple=True)
+            case _:
+                return obj.String(val="OK", simple=True)
 
     def set_handler(self, key: obj.String, val: obj.String, *flags: obj.String) -> obj.Obj:
         set_if, expiry = self._parse_set_flags(*flags)

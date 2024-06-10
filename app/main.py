@@ -3,13 +3,11 @@ import hashlib
 import time
 
 from app.kv_store import KVStore
-from app.resp2 import obj
-from app.resp2.encoder import encode_resp2
 from app.resp2.evaluator import Evaluator
-from app.server import Server
+from app.server import ServerWrapper
 from app.cli import RedisArgs, parse_args
+from app.server.handshake import handshake
 from app.server.info import Address, ServerInfo
-from app.server.tcp_client import TcpClient
 
 from typing import cast
 
@@ -30,7 +28,8 @@ async def run_master(args: RedisArgs) -> None:
 
     kv_store = KVStore()
     eval = Evaluator(kv_store, meta)
-    await Server(meta.addr, eval).run()
+    server_wrapper = ServerWrapper(meta.addr, eval)
+    await (await server_wrapper.prepare()).serve_forever()
 
 
 async def run_slave(args: RedisArgs) -> None:
@@ -44,14 +43,12 @@ async def run_slave(args: RedisArgs) -> None:
 
     kv_store = KVStore()
     eval = Evaluator(kv_store, meta)
-    master_client = await TcpClient.create(meta.master_addr)
-    await send_handshake(master_client)
-    await Server(meta.addr, eval).run()
+    server_wrapper = ServerWrapper(meta.addr, eval)
+    server = await server_wrapper.prepare()
+    master_io = await asyncio.open_connection(meta.master_addr.host, meta.master_addr.port)
+    await handshake(master_io, meta)
+    await server.serve_forever()
 
-
-async def send_handshake(master_client: TcpClient) -> None:
-    command = obj.Arr(elements=[obj.String("PING")])
-    await master_client.send(encode_resp2(command))
 
 
 if __name__ == "__main__":
