@@ -1,13 +1,10 @@
 import asyncio
-from typing import Literal, TypeAlias
+from typing import Literal, Optional, TypeAlias
 from app.kv_store import KVStore
-from app.server.info import ServerInfo
+from app.server.info import ServerInfo, Address
 from app.resp2.encoder import encode_resp2
 from app.resp2.parser import Parser
 from app.resp2.evaluator import Evaluator
-
-Address: TypeAlias = str
-Port: TypeAlias = int
 
 ClientId: TypeAlias = str
 ClientTask: TypeAlias = asyncio.Task
@@ -16,14 +13,22 @@ ClientTask: TypeAlias = asyncio.Task
 class Server:
     def __init__(
         self,
-        addr: tuple[Address, Port],
+        addr: Address,
         kv_store: KVStore,
-        role: Literal["master", "slave"] = "master",
+        replicaof: Optional[Address],
     ) -> None:
+        role: Literal["master", "slave"]
+
+        if not replicaof:
+            role = "master"
+            master_addr = addr
+        else:
+            role = "slave"
+            master_addr = replicaof
+
         self._clients: dict[ClientId, ClientTask] = {}
-        self._info = ServerInfo(role)
+        self._info = ServerInfo(role, addr,  master_addr)
         self._evaluator = Evaluator(kv_store, self._info)
-        self._host, self._port = addr
 
     async def on_client_connect(
         self,
@@ -65,8 +70,8 @@ class Server:
     async def run(self):
         server_socket = await asyncio.start_server(
             self.on_client_connect,
-            host=self._host,
-            port=self._port,
+            host=self._info.addr.host,
+            port=self._info.addr.port,
             reuse_port=True,
             start_serving=False,
         )

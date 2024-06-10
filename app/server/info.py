@@ -4,8 +4,16 @@ from textwrap import dedent
 
 
 @dataclass
+class Address:
+    host: str
+    port: int
+
+
+@dataclass
 class ServerInfo:
     role: Literal["master", "slave"]
+    addr: Address
+    master_addr: Address
 
     def to_string(self) -> str:
         s = f"""
