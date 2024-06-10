@@ -1,12 +1,12 @@
-import time
-import hashlib
+from __future__ import annotations
 import asyncio
-from typing import Literal, Optional, TypeAlias
-from app.kv_store import KVStore
-from app.server.info import ServerInfo, Address
+from typing import TypeAlias, TYPE_CHECKING
+from app.server.info import Address
 from app.resp2.encoder import encode_resp2
 from app.resp2.parser import Parser
-from app.resp2.evaluator import Evaluator
+
+if TYPE_CHECKING:
+    from app.resp2.evaluator import Evaluator
 
 ClientId: TypeAlias = str
 ClientTask: TypeAlias = asyncio.Task
@@ -16,23 +16,11 @@ class Server:
     def __init__(
         self,
         addr: Address,
-        kv_store: KVStore,
-        replicaof: Optional[Address],
+        evaluator: Evaluator,
     ) -> None:
-        role: Literal["master", "slave"]
-
-        if not replicaof:
-            role = "master"
-            master_addr = addr
-            master_repl_id = self._gen_id()
-        else:
-            role = "slave"
-            master_addr = replicaof
-            master_repl_id = ""
-
         self._clients: dict[ClientId, ClientTask] = {}
-        self._info = ServerInfo(role, addr, master_addr, master_repl_id, master_repl_offset=0)
-        self._evaluator = Evaluator(kv_store, self._info)
+        self._addr = addr
+        self._evaluator = evaluator
 
     async def on_client_connect(
         self,
@@ -74,8 +62,8 @@ class Server:
     async def run(self):
         server_socket = await asyncio.start_server(
             self.on_client_connect,
-            host=self._info.addr.host,
-            port=self._info.addr.port,
+            host=self._addr.host,
+            port=self._addr.port,
             reuse_port=True,
             start_serving=False,
         )
@@ -84,8 +72,3 @@ class Server:
 
         server_socket.close()
         await server_socket.wait_closed()
-
-    @staticmethod
-    def _gen_id() -> str:
-        now = str(time.time()).encode()
-        return hashlib.sha256(now).hexdigest()[:40]
