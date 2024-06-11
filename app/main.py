@@ -29,7 +29,8 @@ async def run_master(args: RedisArgs) -> None:
     kv_store = KVStore()
     eval = Evaluator(kv_store, meta)
     server_wrapper = ServerWrapper(meta.addr, eval)
-    await (await server_wrapper.prepare()).serve_forever()
+    server = await server_wrapper.prepare()
+    await server.serve_forever()
 
 
 async def run_slave(args: RedisArgs) -> None:
@@ -37,8 +38,8 @@ async def run_slave(args: RedisArgs) -> None:
         role="slave",
         addr=args.addr,
         master_addr=cast(Address, args.replicaof),
-        master_replid=_gen_id(),
-        master_repl_offset=0,
+        master_replid="?",
+        master_repl_offset=-1,
     )
 
     kv_store = KVStore()

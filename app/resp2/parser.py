@@ -1,6 +1,6 @@
 import asyncio
-import traceback
 from typing import Final
+from app import die
 from app.resp2 import obj
 
 
@@ -16,10 +16,12 @@ CRLF_OFFSET: Final[int] = -len(b"\r\n")
 
 
 class Parser:
-    _chunk: bytes
-
     def __init__(self, reader: asyncio.StreamReader) -> None:
         self._reader = reader
+        self._chunk = b""
+
+    def reset(self) -> None:
+        self._chunk = b""
 
     async def parse_statement(self) -> obj.Obj:
         await self.read_chunk()
@@ -37,8 +39,8 @@ class Parser:
                 return self.read_int()
             case Token.ARRAY:
                 return await self.read_arr()
-            case _:
-                raise RuntimeError("Failed to parse message")
+            case tok:
+                die(f"failed to parse message, got token: {tok}")
 
     def peek_first_char(self) -> int:
         return self._chunk[0]

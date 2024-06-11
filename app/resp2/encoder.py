@@ -17,3 +17,5 @@ def encode_resp2(o: obj.Obj) -> bytes:
             s = f"*{len(elements)}\r\n".encode()
             el = b"".join(map(lambda elem: encode_resp2(elem), elements))
             return s + el
+
+    assert False, "unreachable"

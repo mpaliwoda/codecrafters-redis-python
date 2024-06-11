@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import argparse
 from dataclasses import dataclass
-from typing import Final, Optional
+from typing import Final
 
 from app.server.info import Address
 
@@ -10,7 +10,7 @@ from app.server.info import Address
 @dataclass
 class RedisArgs:
     addr: Address
-    replicaof: Optional[Address]
+    replicaof: Address | None
 
     @classmethod
     def from_namespace(cls, ns: argparse.Namespace) -> RedisArgs:

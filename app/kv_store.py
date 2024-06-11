@@ -1,6 +1,6 @@
 from dataclasses import dataclass
 from datetime import datetime
-from typing import Literal, Optional
+from typing import Literal
 
 from app.resp2 import obj
 
@@ -8,7 +8,7 @@ from app.resp2 import obj
 @dataclass
 class ValWrapper:
     val: obj.String
-    expires_at: Optional[float]
+    expires_at: float | None
 
     def expired(self) -> bool:
         if not self.expires_at:
@@ -34,8 +34,8 @@ class KVStore:
         self,
         key: obj.String,
         val: obj.String,
-        expires_at: Optional[float],
-        set_if: Optional[Literal["nx", "xx"]],
+        expires_at: float | None,
+        set_if: Literal["nx", "xx"] | None,
     ) -> obj.String | obj.Null:
         null = obj.Null()
 

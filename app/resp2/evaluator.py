@@ -1,5 +1,6 @@
 import datetime
-from typing import Any, Literal, TypeGuard, TypeVar, Type, Optional
+from typing import Any, Literal, TypeGuard, TypeVar
+from app import assert_that, die
 from app.kv_store import KVStore, obj
 from collections.abc import Iterable
 
@@ -9,7 +10,7 @@ from app.server.info import ServerInfo
 T = TypeVar("T")
 
 
-def ensure_iterable_type(v: Iterable[Any], typ: Type[T]) -> TypeGuard[Iterable[T]]:
+def ensure_iterable_type(v: Iterable[Any], typ: type[T]) -> TypeGuard[Iterable[T]]:
     return all(isinstance(elem, typ) for elem in v)
 
 
@@ -33,29 +34,25 @@ class Evaluator:
     def eval(self, command: obj.Obj) -> obj.Obj:
         match command:
             case obj.Arr(elements=elements):
-                # heck yeah narrow those types brother
                 if not ensure_iterable_type(elements, obj.String):
-                    raise RuntimeError(f"malformed command: {elements}")
+                    die(f"malformed command: {elements}")
                 func, *args = elements
                 return self.exec_command(func, *args)
             case obj.String():
                 return self.exec_command(command)
             case _:
-                raise RuntimeError("malformed command")
+                die(f"malformed command: {command}")
 
     def exec_command(self, command: obj.String, *args: obj.String) -> obj.Obj:
         match command.val.lower():
             case "ping":
-                if len(args) > 0:
-                    raise ValueError(f"Expected ping to have no args, got: {args}")
+                assert_that(lambda: len(args) == 0, f"Expected ping to have no args, got: {args}")
                 return obj.String("PONG", simple=True)
             case "echo":
-                if len(args) != 1:
-                    raise ValueError(f"Expected ping to have exactly 1 arg, got: {args}")
+                assert_that(lambda: len(args) == 1, f"Expected echo to have exactly 1 arg, got: {args}")
                 return args[0]
             case "get":
-                if len(args) != 1:
-                    raise ValueError(f"Expected get to have exactly 1 arg, got: {args}")
+                assert_that(lambda: len(args) == 1, f"Expected get to have exactly 1 arg, got: {args}")
                 key = args[0]
                 return self.kv_store.get(key)
             case "set":
@@ -65,9 +62,12 @@ class Evaluator:
                 return self.info_handler(*args)
             case "replconf":
                 return self.replconf_handler(*args)
+            case "psync":
+                assert_that(lambda: len(args) == 2, "Invalid usage of psync")
+                replid, offset = args
+                return self.psync_handler(replid, offset)
             case val:
-                print(f"got unsupported command: {val} {args}")
-                return obj.Null()
+                die(f"got unsupported command: {val} {args}")
 
     def info_handler(self, *args: obj.String) -> obj.Obj:
         match args:
@@ -77,7 +77,7 @@ class Evaluator:
                         info = self._server_info.to_string()
                         return obj.String(info)
                     case _:
-                        raise RuntimeError("not supported yet")
+                        die("not supported yet")
             case _:
                 return obj.String(val="OK", simple=True)
 
@@ -90,7 +90,12 @@ class Evaluator:
             case "capa":
                 return obj.String(val="OK", simple=True)
             case _:
-                return obj.String(val="OK", simple=True)
+                die(f"unsupported replconf: {args}")
+
+    def psync_handler(self, replid: obj.String, offset: obj.String) -> obj.Obj:
+        if replid.val == "?" and int(offset.val) == -1:
+            return obj.String(f"FULLRESYNC {self._server_info.master_replid} 0", simple=True)
+        die("we haven't gone that far yet")
 
     def set_handler(self, key: obj.String, val: obj.String, *flags: obj.String) -> obj.Obj:
         set_if, expiry = self._parse_set_flags(*flags)
@@ -100,34 +105,30 @@ class Evaluator:
     @staticmethod
     def _parse_set_flags(
         *flags: obj.String,
-    ) -> tuple[Optional[SetIf], Optional[Expiry]]:
+    ) -> tuple[SetIf | None, Expiry | None]:
         ix = 0
 
-        expiry: Optional[Expiry] = None
-        set_if: Optional[SetIf] = None
+        expiry: Expiry | None = None
+        set_if: SetIf | None = None
 
         while ix < len(flags):
             flag = flags[ix]
 
             match f := flag.val.lower():
                 case "px" | "pxat" | "ex" | "exat":
-                    if expiry:
-                        raise RuntimeError("malformed set command")
-
+                    assert_that(lambda: expiry is None, "malformed set command")
                     expiry_val = flags[ix + 1]
                     expiry = f, float(expiry_val.val)
                     ix += 2
                 case "nx" | "xx":
-                    if set_if:
-                        raise RuntimeError("malformed set command")
-
+                    assert_that(lambda: set_if is None, "malformed set command")
                     set_if = f
                     ix += 1
 
         return set_if, expiry
 
     @staticmethod
-    def _calc_expiries_at(expiry: Optional[Expiry]) -> float | None:
+    def _calc_expiries_at(expiry: Expiry | None) -> float | None:
         match expiry:
             case None:
                 return None

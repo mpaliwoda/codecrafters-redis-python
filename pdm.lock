@@ -5,7 +5,7 @@
 groups = ["default", "dev"]
 strategy = ["cross_platform", "inherit_metadata"]
 lock_version = "4.4.1"
-content_hash = "sha256:8fb58cea6cac4ce6be21b3d38283d54c6946776f57edd1e233b0e260055ecc2b"
+content_hash = "sha256:c9daeb1814b7e1904001965d8c6fd6aa13636b69c4a69f9cf466ce547aff9ad9"
 
 [[package]]
 name = "mypy"
@@ -39,6 +39,20 @@ files = [
 ]
 
 [[package]]
+name = "pyupgrade"
+version = "3.16.0"
+requires_python = ">=3.8.1"
+summary = "A tool to automatically upgrade syntax for newer versions."
+groups = ["dev"]
+dependencies = [
+    "tokenize-rt>=5.2.0",
+]
+files = [
+    {file = "pyupgrade-3.16.0-py2.py3-none-any.whl", hash = "sha256:7a54ee28f3024d027048d49d101e5c702e88c85edc3a1d08b636c50ebef2a97d"},
+    {file = "pyupgrade-3.16.0.tar.gz", hash = "sha256:237893a05d5b117259b31b423f23cbae4bce0b7eae57ba9a52c06098c2ddd76f"},
+]
+
+[[package]]
 name = "ruff"
 version = "0.4.8"
 requires_python = ">=3.7"
@@ -62,6 +76,17 @@ files = [
     {file = "ruff-0.4.8-py3-none-win_amd64.whl", hash = "sha256:e14a3a095d07560a9d6769a72f781d73259655919d9b396c650fc98a8157555d"},
     {file = "ruff-0.4.8-py3-none-win_arm64.whl", hash = "sha256:14019a06dbe29b608f6b7cbcec300e3170a8d86efaddb7b23405cb7f7dcaf780"},
     {file = "ruff-0.4.8.tar.gz", hash = "sha256:16d717b1d57b2e2fd68bd0bf80fb43931b79d05a7131aa477d66fc40fbd86268"},
+]
+
+[[package]]
+name = "tokenize-rt"
+version = "5.2.0"
+requires_python = ">=3.8"
+summary = "A wrapper around the stdlib `tokenize` which roundtrips."
+groups = ["dev"]
+files = [
+    {file = "tokenize_rt-5.2.0-py2.py3-none-any.whl", hash = "sha256:b79d41a65cfec71285433511b50271b05da3584a1da144a0752e9c621a285289"},
+    {file = "tokenize_rt-5.2.0.tar.gz", hash = "sha256:9fe80f8a5c1edad2d3ede0f37481cc0cc1538a2f442c9c2f9e4feacd2792d054"},
 ]
 
 [[package]]

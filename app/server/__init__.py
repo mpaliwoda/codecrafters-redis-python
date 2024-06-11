@@ -1,14 +1,18 @@
 from __future__ import annotations
 import asyncio
+import logging
 from typing import TypeAlias, TYPE_CHECKING
 from app.server.info import Address
 from app.resp2.encoder import encode_resp2
 from app.resp2.parser import Parser
+
 if TYPE_CHECKING:
     from app.resp2.evaluator import Evaluator
 
 ClientId: TypeAlias = str
 ClientTask: TypeAlias = asyncio.Task
+
+logger = logging.getLogger(__name__)
 
 
 class ServerWrapper:
@@ -20,6 +24,7 @@ class ServerWrapper:
         self._clients: dict[ClientId, ClientTask] = {}
         self._addr = addr
         self._evaluator = evaluator
+        self._server: asyncio.Server | None = None
 
     async def on_client_connect(
         self,
@@ -32,7 +37,7 @@ class ServerWrapper:
             try:
                 future.result()
             except Exception as e:
-                print(e)
+                logger.error(e)
             finally:
                 del self._clients[client_id]
 
